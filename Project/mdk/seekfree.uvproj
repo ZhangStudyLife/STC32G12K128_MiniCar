@@ -753,6 +753,18 @@
         </Group>
         <Group>
           <GroupName>code</GroupName>
+          <Files>
+            <File>
+              <FileName>motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\code\motor.c</FilePath>
+            </File>
+            <File>
+              <FileName>motor.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\code\motor.h</FilePath>
+            </File>
+          </Files>
         </Group>
         <Group>
           <GroupName>user</GroupName>
