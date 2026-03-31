@@ -1,0 +1,71 @@
+# Embedded build outputs for STC32G / Keil C51 projects
+# Keep source, project config, and library files tracked.
+
+# Keil output directories
+out/
+Output/
+Objects/
+Listings/
+Listing/
+Debug/
+Release/
+build/
+Build/
+Bin/
+Obj/
+Project/mdk/out_file/
+
+# Keil temporary and user-specific files
+*.uvgui.*
+*.uvguix.*
+*.uvopt
+*.uvoptx
+*.dep
+*.lnp
+*.bak
+*.tmp
+*.crf
+*.d
+*.lk
+*.plg
+*.sbr
+*.sconscript
+
+# C51 / linker / map / listing / debug artifacts
+*.obj
+*.o
+*.omf
+*.lst
+*.map
+*.m51
+*.lnk
+*.hex
+*.bin
+*.abs
+*.axf
+*.elf
+*.ihx
+*.cod
+*.adb
+*.sim
+
+# Flashing and package outputs
+*.isp
+*.stcflash
+*.pack
+
+# IDE and editor noise
+.vscode/
+.idea/
+*.code-workspace
+
+# Logs and lock files
+*.log
+*.lock
+
+# OS junk
+Thumbs.db
+Desktop.ini
+
+# Local tools that should not live in git
+STC-ISP*.exe
