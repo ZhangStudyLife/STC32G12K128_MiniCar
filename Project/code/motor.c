@@ -3,6 +3,7 @@
 
 #define MOTOR_PWM_FREQ           (20000U)
 #define MOTOR_SPEED_MAX          (1000)
+#define MOTOR_SPEED_LIMIT        (650)
 #define MOTOR_THROTTLE_DEADZONE  (125)
 #define MOTOR_DUTY_SCALE         (10U)
 
@@ -21,13 +22,13 @@ static int motor_limit_speed(int speed)
         speed = 0;
     }
 
-    if(speed > MOTOR_SPEED_MAX)
+    if(speed > MOTOR_SPEED_LIMIT)
     {
-        speed = MOTOR_SPEED_MAX;
+        speed = MOTOR_SPEED_LIMIT;
     }
-    else if(speed < -MOTOR_SPEED_MAX)
+    else if(speed < -MOTOR_SPEED_LIMIT)
     {
-        speed = -MOTOR_SPEED_MAX;
+        speed = -MOTOR_SPEED_LIMIT;
     }
 
     return speed;
