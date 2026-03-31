@@ -1,57 +1,59 @@
 #include "zf_common_headfile.h"
 #include "motor.h"
+#include "track_io.h"
 
-#define MOTOR_TEST_STEP_MS          (10U)
-#define MOTOR_TEST_RAMP_UP_MS       (3000U)
-#define MOTOR_TEST_RAMP_DOWN_MS     (6000U)
-#define MOTOR_TEST_RAMP_RETURN_MS   (3000U)
-#define MOTOR_TEST_CYCLE_MS         (MOTOR_TEST_RAMP_UP_MS + MOTOR_TEST_RAMP_DOWN_MS + MOTOR_TEST_RAMP_RETURN_MS)
-#define MOTOR_TEST_SPEED_MIN        (-300)
-#define MOTOR_TEST_SPEED_MAX        (300)
+#define IMU_TEXT_X (0U)
+#define IMU_VALUE_X (56U)
+#define IMU_LINE_HEIGHT (16U)
 
-static int motor_test_get_speed(uint16 cycle_time_ms)
+static void imu660rb_display_raw_data(void)
 {
-    int32 speed = 0;
+    ips114_show_string(IMU_TEXT_X, 0U * IMU_LINE_HEIGHT, "ACC X:");
+    ips114_show_int16(IMU_VALUE_X, 0U * IMU_LINE_HEIGHT, imu660rb_acc_x);
 
-    if(cycle_time_ms < MOTOR_TEST_RAMP_UP_MS)
-    {
-        speed = (int32)MOTOR_TEST_SPEED_MAX * cycle_time_ms / MOTOR_TEST_RAMP_UP_MS;
-    }
-    else if(cycle_time_ms < (MOTOR_TEST_RAMP_UP_MS + MOTOR_TEST_RAMP_DOWN_MS))
-    {
-        speed = MOTOR_TEST_SPEED_MAX;
-        speed -= (int32)(MOTOR_TEST_SPEED_MAX - MOTOR_TEST_SPEED_MIN) *
-                 (cycle_time_ms - MOTOR_TEST_RAMP_UP_MS) / MOTOR_TEST_RAMP_DOWN_MS;
-    }
-    else
-    {
-        speed = MOTOR_TEST_SPEED_MIN;
-        speed += (int32)(0 - MOTOR_TEST_SPEED_MIN) *
-                 (cycle_time_ms - MOTOR_TEST_RAMP_UP_MS - MOTOR_TEST_RAMP_DOWN_MS) / MOTOR_TEST_RAMP_RETURN_MS;
-    }
+    ips114_show_string(IMU_TEXT_X, 1U * IMU_LINE_HEIGHT, "ACC Y:");
+    ips114_show_int16(IMU_VALUE_X, 1U * IMU_LINE_HEIGHT, imu660rb_acc_y);
 
-    return (int)speed;
+    ips114_show_string(IMU_TEXT_X, 2U * IMU_LINE_HEIGHT, "ACC Z:");
+    ips114_show_int16(IMU_VALUE_X, 2U * IMU_LINE_HEIGHT, imu660rb_acc_z);
+
+    ips114_show_string(IMU_TEXT_X, 3U * IMU_LINE_HEIGHT, "GYR X:");
+    ips114_show_int16(IMU_VALUE_X, 3U * IMU_LINE_HEIGHT, imu660rb_gyro_x);
+
+    ips114_show_string(IMU_TEXT_X, 4U * IMU_LINE_HEIGHT, "GYR Y:");
+    ips114_show_int16(IMU_VALUE_X, 4U * IMU_LINE_HEIGHT, imu660rb_gyro_y);
+
+    ips114_show_string(IMU_TEXT_X, 5U * IMU_LINE_HEIGHT, "GYR Z:");
+    ips114_show_int16(IMU_VALUE_X, 5U * IMU_LINE_HEIGHT, imu660rb_gyro_z);
 }
 
 void main()
 {
-    uint16 cycle_time_ms = 0;
-    int speed = 0;
-
     clock_init(SYSTEM_CLOCK_30M);
     debug_init();
+
+    Track_IO_Init();
+
+    ips114_init();
+    ips114_clear(IPS114_DEFAULT_BGCOLOR);
+
+    imu660rb_init();
     Motor_Init();
-
-    while(1)
+    while (1)
     {
-        speed = motor_test_get_speed(cycle_time_ms);
-        Motor_Set_Speed(speed, speed);
+        imu660rb_get_acc();
+        imu660rb_get_gyro();
+        Track_IO_Update();
 
-        system_delay_ms(MOTOR_TEST_STEP_MS);
-        cycle_time_ms += MOTOR_TEST_STEP_MS;
-        if(cycle_time_ms >= MOTOR_TEST_CYCLE_MS)
-        {
-            cycle_time_ms = 0;
-        }
+        ips114_clear(IPS114_DEFAULT_BGCOLOR);
+        imu660rb_display_raw_data();
+        Motor_Set_Speed(150, 150);
+        Track_IO_Update();
+        printf("%d,%d,%d,%d,%d\r\n",
+               track_io_data[TRACK_IO_L2],
+               track_io_data[TRACK_IO_L1],
+               track_io_data[TRACK_IO_MID],
+               track_io_data[TRACK_IO_R1],
+               track_io_data[TRACK_IO_R2]);
     }
 }

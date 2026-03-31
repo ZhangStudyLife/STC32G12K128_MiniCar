@@ -3,6 +3,7 @@
 
 #define MOTOR_PWM_FREQ           (20000U)
 #define MOTOR_SPEED_MAX          (1000)
+#define MOTOR_THROTTLE_DEADZONE  (125)
 #define MOTOR_DUTY_SCALE         (10U)
 
 #define MOTOR_LEFT_PWM_PIN       (PWMA_CH4P_P66)
@@ -15,6 +16,11 @@
 
 static int motor_limit_speed(int speed)
 {
+    if((speed >= -MOTOR_THROTTLE_DEADZONE) && (speed <= MOTOR_THROTTLE_DEADZONE))
+    {
+        speed = 0;
+    }
+
     if(speed > MOTOR_SPEED_MAX)
     {
         speed = MOTOR_SPEED_MAX;
