@@ -1,4 +1,5 @@
 #include "zf_common_headfile.h"
+#include "beep.h"
 #include "motor.h"
 #include "track_io.h"
 
@@ -68,6 +69,7 @@ void main()
     ips114_clear(IPS114_DEFAULT_BGCOLOR);
 
     imu660rb_init();
+    Beep_Init();
     Motor_Init();
     pit_ms_init(TIM0_PIT, 50);
     tim0_irq_handler = gyro_z_pi_50ms_handler;
