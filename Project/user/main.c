@@ -3,30 +3,65 @@
 #include "motor.h"
 #include "track_io.h"
 
-#define IMU_TEXT_X (0U)
-#define IMU_VALUE_X (56U)
-#define IMU_LINE_HEIGHT (16U)
+#define TRACK_VALUE_X       (0U)
+#define TRACK_REFRESH_DIV   (50U)
+#define BEEP_TOGGLE_TICKS   (20U)
+#define YAW_UPDATE_DT       (0.05f)
+#define TRACK_TARGET_SCALE  (100)
+
+volatile float yaw = 0.0f;
+
+static float track_get_target(void)
+{
+    static uint8 last_valid_left = 1U;
+    static uint8 last_valid_right = 1U;
+    uint8 left = track_io_data[TRACK_IO_LEFT] ? 1U : 0U;
+    uint8 right = track_io_data[TRACK_IO_RIGHT] ? 1U : 0U;
+
+    if((left != 0U) || (right != 0U))
+    {
+        last_valid_left = left;
+        last_valid_right = right;
+    }
+    else
+    {
+        left = last_valid_left;
+        right = last_valid_right;
+    }
+
+    return (float)((int)left * TRACK_TARGET_SCALE
+                 + (int)right * -TRACK_TARGET_SCALE);
+}
 
 static void gyro_z_pi_50ms_handler(void)
 {
     static float integral = 0.0f;
-    const int base_speed = 700;
+    static uint8 tick_50ms = 0;
+    static uint8 beep_on = 1;
+    const int base_speed = 400;
     const float kp = 3.0f;
-    const float ki = 0.6f;
+    const float ki = 1.2f;
     float target;
     float gyro_z;
     float error;
     int diff;
 
-    target = (float)((int)track_io_data[TRACK_IO_L2] * -40
-                   + (int)track_io_data[TRACK_IO_L1] * -20
-                   + (int)track_io_data[TRACK_IO_R1] * 20
-                   + (int)track_io_data[TRACK_IO_R2] * 40);
+    target = track_get_target();
 
     // 先不用红外循迹模块，目标直接给0
-    target = 0.0f;
+    // target = 0.0f;
     imu660rb_get_gyro();
     gyro_z = - imu660rb_gyro_transition((imu660rb_gyro_z+1));       // +1 去零漂
+    yaw += gyro_z * YAW_UPDATE_DT;
+    if(yaw > 180.0f)
+    {
+        yaw -= 360.0f;
+    }
+    else if(yaw < -180.0f)
+    {
+        yaw += 360.0f;
+    }
+
     error = target - gyro_z;
     integral += error;
 
@@ -35,27 +70,48 @@ static void gyro_z_pi_50ms_handler(void)
 
     diff = (int)(kp * error + ki * integral);
     Motor_Set_Speed(base_speed + diff, base_speed - diff);
+
+    // if(++tick_50ms >= BEEP_TOGGLE_TICKS)
+    // {
+    //     tick_50ms = 0;
+    //     beep_on = !beep_on;
+    //     if(beep_on)
+    //     {
+    //         Beep_On();
+    //     }
+    //     else
+    //     {
+    //         Beep_Off();
+    //     }
+    // }
 }
 
-static void imu660rb_display_raw_data(void)
+static void track_io_display_2_low_rate(void)
 {
-    ips114_show_string(IMU_TEXT_X, 0U * IMU_LINE_HEIGHT, "ACC X:");
-    ips114_show_int16(IMU_VALUE_X, 0U * IMU_LINE_HEIGHT, imu660rb_acc_x);
+    static uint8 refresh_div = 0;
+    static uint8 last_pattern = 0xFF;
+    uint8 pattern;
+    char track_text[3] = "00";
 
-    ips114_show_string(IMU_TEXT_X, 1U * IMU_LINE_HEIGHT, "ACC Y:");
-    ips114_show_int16(IMU_VALUE_X, 1U * IMU_LINE_HEIGHT, imu660rb_acc_y);
+    if(++refresh_div < TRACK_REFRESH_DIV)
+    {
+        return;
+    }
+    refresh_div = 0;
 
-    ips114_show_string(IMU_TEXT_X, 2U * IMU_LINE_HEIGHT, "ACC Z:");
-    ips114_show_int16(IMU_VALUE_X, 2U * IMU_LINE_HEIGHT, imu660rb_acc_z);
+    pattern = ((track_io_data[TRACK_IO_LEFT] ? 1U : 0U) << 1)
+            | ((track_io_data[TRACK_IO_RIGHT] ? 1U : 0U) << 0);
 
-    ips114_show_string(IMU_TEXT_X, 3U * IMU_LINE_HEIGHT, "GYR X:");
-    ips114_show_int16(IMU_VALUE_X, 3U * IMU_LINE_HEIGHT, imu660rb_gyro_x);
+    if(pattern == last_pattern)
+    {
+        return;
+    }
+    last_pattern = pattern;
 
-    ips114_show_string(IMU_TEXT_X, 4U * IMU_LINE_HEIGHT, "GYR Y:");
-    ips114_show_int16(IMU_VALUE_X, 4U * IMU_LINE_HEIGHT, imu660rb_gyro_y);
+    track_text[0] = track_io_data[TRACK_IO_RIGHT] ? '1' : '0';
+    track_text[1] = track_io_data[TRACK_IO_LEFT] ? '1' : '0';
 
-    ips114_show_string(IMU_TEXT_X, 5U * IMU_LINE_HEIGHT, "GYR Z:");
-    ips114_show_int16(IMU_VALUE_X, 5U * IMU_LINE_HEIGHT, imu660rb_gyro_z);
+    ips114_show_string(TRACK_VALUE_X, 0U, track_text);
 }
 
 void main()
@@ -70,22 +126,14 @@ void main()
 
     imu660rb_init();
     Beep_Init();
+    Beep_On();
     Motor_Init();
     pit_ms_init(TIM0_PIT, 50);
     tim0_irq_handler = gyro_z_pi_50ms_handler;
+    Beep_Off();
     while (1)
     {
-        imu660rb_get_acc();
         Track_IO_Update();
-
-        ips114_clear(IPS114_DEFAULT_BGCOLOR);
-        imu660rb_display_raw_data();
-        Track_IO_Update();
-        printf("%d,%d,%d,%d,%d\r\n",
-               track_io_data[TRACK_IO_L2],
-               track_io_data[TRACK_IO_L1],
-               track_io_data[TRACK_IO_MID],
-               track_io_data[TRACK_IO_R1],
-               track_io_data[TRACK_IO_R2]);
+        track_io_display_2_low_rate();
     }
 }

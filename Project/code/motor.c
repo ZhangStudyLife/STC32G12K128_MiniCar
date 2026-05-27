@@ -3,7 +3,7 @@
 
 #define MOTOR_PWM_FREQ           (20000U)
 #define MOTOR_SPEED_MAX          (1000)
-#define MOTOR_SPEED_LIMIT        (650)
+#define MOTOR_SPEED_LIMIT        (900)
 #define MOTOR_THROTTLE_DEADZONE  (125)
 #define MOTOR_DUTY_SCALE         (10U)
 
