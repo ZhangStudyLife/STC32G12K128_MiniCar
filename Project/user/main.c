@@ -7,7 +7,7 @@
 #define TRACK_REFRESH_DIV   (50U)
 #define BEEP_TOGGLE_TICKS   (20U)
 #define YAW_UPDATE_DT       (0.05f)
-#define TRACK_TARGET_SCALE  (60)
+#define TRACK_TARGET_SCALE  (80)
 
 volatile float yaw = 0.0f;
 
@@ -38,7 +38,7 @@ static void gyro_z_pi_50ms_handler(void)
     static float integral = 0.0f;
     static uint8 tick_50ms = 0;
     static uint8 beep_on = 1;
-    const int base_speed = 400;
+    const int base_speed = 500;
     const float kp = 3.0f;
     const float ki = 2.0f;
     float target;
@@ -118,7 +118,6 @@ void main()
 {
     clock_init(SYSTEM_CLOCK_30M);
     debug_init();
-
     Track_IO_Init();
 
     ips114_init();
