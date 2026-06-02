@@ -57,7 +57,7 @@ static void wireless_uart_send_5float(float a, float b, float c, float d, float 
     DMA_UR4T_CR = 0xC0;
 }
 
-static float track_get_target(void)
+float track_get_target(void)
 {
     static uint8 last_valid_left = 1U;
     static uint8 last_valid_right = 1U;
@@ -79,8 +79,22 @@ static float track_get_target(void)
                  + (int)right * -TRACK_TARGET_SCALE);
 }
 
+static float target_gyro_z_by_time(uint32 tick)
+{
+    tick %= 320;
+    if(tick < 40)  return (float)tick * 2.0f;
+    if(tick < 80)  return (float)(80 - tick) * 2.0f;
+    if(tick < 120) return -(float)(tick - 80) * 2.0f;
+    if(tick < 160) return -(float)(160 - tick) * 2.0f;
+    if(tick < 200) return 80.0f;
+    if(tick < 240) return -80.0f;
+    if(tick < 280) return 40.0f;
+    return -40.0f;
+}
+
 static void gyro_z_pi_50ms_handler(void)
 {
+    static uint32 control_tick = 0;
     static float integral = 0.0f;
     static uint8 tick_50ms = 0;
     static uint8 beep_on = 1;
@@ -92,10 +106,9 @@ static void gyro_z_pi_50ms_handler(void)
     float error;
     int diff;
 
-    target = track_get_target();
+    target = target_gyro_z_by_time(control_tick++);
 
-    // 先不用红外循迹模块，目标直接给0
-    target = 0.0f;
+    // 目标角速度只按时间规划，不跟随红外循迹。
     imu660rb_get_gyro();
     gyro_z = - imu660rb_gyro_transition((imu660rb_gyro_z+1));       // +1 去零漂
     yaw += gyro_z * YAW_UPDATE_DT;
