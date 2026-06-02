@@ -81,32 +81,34 @@ float track_get_target(void)
 
 static float target_gyro_z_by_time(uint32 tick)
 {
-    tick %= 320;
+    tick %= 160;
     if(tick < 40)  return (float)tick * 2.0f;
     if(tick < 80)  return (float)(80 - tick) * 2.0f;
     if(tick < 120) return -(float)(tick - 80) * 2.0f;
-    if(tick < 160) return -(float)(160 - tick) * 2.0f;
-    if(tick < 200) return 80.0f;
-    if(tick < 240) return -80.0f;
-    if(tick < 280) return 40.0f;
-    return -40.0f;
+    return -(float)(160 - tick) * 2.0f;
 }
 
 static void gyro_z_pi_50ms_handler(void)
 {
     static uint32 control_tick = 0;
+    static float last_target = 0.0f;
     static float integral = 0.0f;
     static uint8 tick_50ms = 0;
     static uint8 beep_on = 1;
     const int base_speed = 500;
-    const float kp = 3.0f;
-    const float ki = 2.0f;
+    const float kp = 2.0f;
+    const float ki = 1.0f;
     float target;
     float gyro_z;
     float error;
     int diff;
 
     target = target_gyro_z_by_time(control_tick++);
+    if((target * last_target) < 0.0f)
+    {
+        integral = 0.0f;
+    }
+    last_target = target;
 
     // 目标角速度只按时间规划，不跟随红外循迹。
     imu660rb_get_gyro();
@@ -122,12 +124,14 @@ static void gyro_z_pi_50ms_handler(void)
     }
 
     error = target - gyro_z;
-    integral += error;
+    integral += error * YAW_UPDATE_DT;
 
-    if(integral > 300.0f) integral = 300.0f;
-    if(integral < -300.0f) integral = -300.0f;
+    if(integral > 80.0f) integral = 80.0f;
+    if(integral < -80.0f) integral = -80.0f;
 
     diff = (int)(kp * error + ki * integral);
+    if(diff > 180) diff = 180;
+    if(diff < -180) diff = -180;
     Motor_Set_Speed(base_speed + diff, base_speed - diff);
     wireless_uart_data[0] = target;
     wireless_uart_data[1] = gyro_z;
