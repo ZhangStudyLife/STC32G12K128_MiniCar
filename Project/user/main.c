@@ -1,13 +1,8 @@
 #include "zf_common_headfile.h"
 #include "beep.h"
 #include "motor.h"
-#include "track_io.h"
 
-#define TRACK_VALUE_X       (0U)
-#define TRACK_REFRESH_DIV   (50U)
-#define BEEP_TOGGLE_TICKS   (20U)
 #define YAW_UPDATE_DT       (0.05f)
-#define TRACK_TARGET_SCALE  (80)
 
 volatile float yaw = 0.0f;
 static uint8 wireless_uart_ok = 0;
@@ -31,7 +26,7 @@ static void wireless_uart_try_init(void)
     }
 }
 
-static void wireless_uart_send_5float(float a, float b, float c, float d, float e)
+static void wireless_uart_send_5float(float *dat)
 {
     uint16 len;
 
@@ -48,7 +43,7 @@ static void wireless_uart_send_5float(float a, float b, float c, float d, float 
     {
         return;
     }
-    len = zf_sprintf((int8 *)wireless_uart_tx_buffer, (const int8 *)"%f,%f,%f,%f,%f\r\n", a, b, c, d, e);
+    len = zf_sprintf((int8 *)wireless_uart_tx_buffer, (const int8 *)"%f,%f,%f,%f,%f\r\n", dat[0], dat[1], dat[2], dat[3], dat[4]);
     DMA_UR4T_STA = 0;
     DMA_UR4T_AMT = (len - 1) & 0xFF;
     DMA_UR4T_AMTH = (len - 1) >> 8;
@@ -57,44 +52,11 @@ static void wireless_uart_send_5float(float a, float b, float c, float d, float 
     DMA_UR4T_CR = 0xC0;
 }
 
-float track_get_target(void)
-{
-    static uint8 last_valid_left = 1U;
-    static uint8 last_valid_right = 1U;
-    uint8 left = track_io_data[TRACK_IO_LEFT] ? 1U : 0U;
-    uint8 right = track_io_data[TRACK_IO_RIGHT] ? 1U : 0U;
-
-    if((left != 0U) || (right != 0U))
-    {
-        last_valid_left = left;
-        last_valid_right = right;
-    }
-    else
-    {
-        left = last_valid_left;
-        right = last_valid_right;
-    }
-
-    return (float)((int)left * TRACK_TARGET_SCALE
-                 + (int)right * -TRACK_TARGET_SCALE);
-}
-
-static float target_gyro_z_by_time(uint32 tick)
-{
-    tick %= 160;
-    if(tick < 40)  return (float)tick * 2.0f;
-    if(tick < 80)  return (float)(80 - tick) * 2.0f;
-    if(tick < 120) return -(float)(tick - 80) * 2.0f;
-    return -(float)(160 - tick) * 2.0f;
-}
-
 static void gyro_z_pi_50ms_handler(void)
 {
-    static uint32 control_tick = 0;
+    static uint8 control_tick = 0;
     static float last_target = 0.0f;
     static float integral = 0.0f;
-    static uint8 tick_50ms = 0;
-    static uint8 beep_on = 1;
     const int base_speed = 500;
     const float kp = 2.0f;
     const float ki = 1.0f;
@@ -103,7 +65,14 @@ static void gyro_z_pi_50ms_handler(void)
     float error;
     int diff;
 
-    target = target_gyro_z_by_time(control_tick++);
+    if(control_tick < 40)       target = (float)control_tick * 2.0f;
+    else if(control_tick < 80)  target = (float)(80 - control_tick) * 2.0f;
+    else if(control_tick < 120) target = -(float)(control_tick - 80) * 2.0f;
+    else                       target = -(float)(160 - control_tick) * 2.0f;
+    if(++control_tick >= 160)
+    {
+        control_tick = 0;
+    }
     if((target * last_target) < 0.0f)
     {
         integral = 0.0f;
@@ -139,48 +108,6 @@ static void gyro_z_pi_50ms_handler(void)
     wireless_uart_data[3] = error;
     wireless_uart_data[4] = integral;
     wireless_uart_pending = 1;
-
-    // if(++tick_50ms >= BEEP_TOGGLE_TICKS)
-    // {
-    //     tick_50ms = 0;
-    //     beep_on = !beep_on;
-    //     if(beep_on)
-    //     {
-    //         Beep_On();
-    //     }
-    //     else
-    //     {
-    //         Beep_Off();
-    //     }
-    // }
-}
-
-void track_io_display_2_low_rate(void)
-{
-    static uint8 refresh_div = 0;
-    static uint8 last_pattern = 0xFF;
-    uint8 pattern;
-    char track_text[3] = "00";
-
-    if(++refresh_div < TRACK_REFRESH_DIV)
-    {
-        return;
-    }
-    refresh_div = 0;
-
-    pattern = ((track_io_data[TRACK_IO_LEFT] ? 1U : 0U) << 1)
-            | ((track_io_data[TRACK_IO_RIGHT] ? 1U : 0U) << 0);
-
-    if(pattern == last_pattern)
-    {
-        return;
-    }
-    last_pattern = pattern;
-
-    track_text[0] = track_io_data[TRACK_IO_RIGHT] ? '1' : '0';
-    track_text[1] = track_io_data[TRACK_IO_LEFT] ? '1' : '0';
-
-    ips114_show_string(TRACK_VALUE_X, 0U, track_text);
 }
 
 void main()
@@ -190,8 +117,6 @@ void main()
     clock_init(SYSTEM_CLOCK_30M);
     debug_init();
     wireless_uart_try_init();
-    Track_IO_Init();
-
     ips114_init();
     ips114_clear(IPS114_DEFAULT_BGCOLOR);
 
@@ -204,7 +129,6 @@ void main()
     Beep_Off();
     while (1)
     {
-        Track_IO_Update();
         if(wireless_uart_pending)
         {
             interrupt_global_disable();
@@ -215,8 +139,7 @@ void main()
             wireless_uart_dat[3] = wireless_uart_data[3];
             wireless_uart_dat[4] = wireless_uart_data[4];
             interrupt_global_enable();
-            wireless_uart_send_5float(wireless_uart_dat[0], wireless_uart_dat[1], wireless_uart_dat[2], wireless_uart_dat[3], wireless_uart_dat[4]);
+            wireless_uart_send_5float(wireless_uart_dat);
         }
-        // track_io_display_2_low_rate();
     }
 }
