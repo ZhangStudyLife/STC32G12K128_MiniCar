@@ -6,8 +6,6 @@
 
 #define YAW_UPDATE_DT       (0.05f)
 #define TRACK_TARGET_SCALE  (50)
-#define MODE1_LOST_TICK     (4)
-#define MODE1_SEARCH_SPEED  (350)
 #define MODE2_RUN_TICK      (40)
 #define MODE2_RUN_SPEED     (500)
 #define MODE2_TURN_SPEED    (650)
@@ -89,11 +87,9 @@ float track_get_target(void)
 
 static void mode1(void)
 {
-    static uint8 lost_tick = 0;
-    static int search_speed = MODE1_SEARCH_SPEED;
     static float last_target = 0.0f;
     static float integral = 0.0f;
-    int base_speed = 500;
+    const int base_speed = 500;
     const float kp = 2.0f;
     const float ki = 1.0f;
     float target;
@@ -101,34 +97,7 @@ static void mode1(void)
     float error;
     int diff;
 
-    if((track_io_data[TRACK_IO_LEFT] == 0) && (track_io_data[TRACK_IO_RIGHT] == 0))
-    {
-        if(lost_tick < MODE1_LOST_TICK)
-        {
-            lost_tick++;
-        }
-    }
-    else
-    {
-        if(lost_tick >= MODE1_LOST_TICK)
-        {
-            integral = 0.0f;
-            last_target = 0.0f;
-        }
-        lost_tick = 0;
-    }
-
-    if(lost_tick >= MODE1_LOST_TICK)
-    {
-        integral = 0.0f;
-        last_target = 0.0f;
-        Motor_Set_Speed(search_speed, -search_speed);
-        return;
-    }
-    else
-    {
-        target = track_get_target();
-    }
+    target = track_get_target();
     if((target * last_target) < 0.0f)
     {
         integral = 0.0f;
@@ -136,7 +105,7 @@ static void mode1(void)
     last_target = target;
 
     imu660rb_get_gyro();
-    gyro_z = - imu660rb_gyro_transition((imu660rb_gyro_z+1));       // +1 去零漂
+    gyro_z = - imu660rb_gyro_transition((imu660rb_gyro_z+1));
     yaw += gyro_z * YAW_UPDATE_DT;
     if(yaw > 180.0f)
     {
@@ -156,8 +125,6 @@ static void mode1(void)
     diff = (int)(kp * error + ki * integral);
     if(diff > 180) diff = 180;
     if(diff < -180) diff = -180;
-    if(diff > 0) search_speed = MODE1_SEARCH_SPEED;
-    else if(diff < 0) search_speed = -MODE1_SEARCH_SPEED;
     Motor_Set_Speed(base_speed + diff, base_speed - diff);
     wireless_uart_data[0] = key_data[0];
     wireless_uart_data[1] = key_data[1];
