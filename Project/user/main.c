@@ -6,6 +6,7 @@
 #define YAW_UPDATE_DT       (0.05f)
 
 volatile float yaw = 0.0f;
+volatile uint8 mode_enable[4] = {0, 0, 0, 0};
 static uint8 wireless_uart_ok = 0;
 static uint8 wireless_uart_pending = 0;
 static float wireless_uart_data[5];
@@ -53,7 +54,7 @@ static void wireless_uart_send_5float(float *dat)
     DMA_UR4T_CR = 0xC0;
 }
 
-static void gyro_z_pi_50ms_handler(void)
+static void mode1(void)
 {
     static uint8 control_tick = 0;
     static float last_target = 0.0f;
@@ -66,7 +67,6 @@ static void gyro_z_pi_50ms_handler(void)
     float error;
     int diff;
 
-    Key_Update();
     if(control_tick < 40)       target = (float)control_tick * 2.0f;
     else if(control_tick < 80)  target = (float)(80 - control_tick) * 2.0f;
     else if(control_tick < 120) target = -(float)(control_tick - 80) * 2.0f;
@@ -112,6 +112,61 @@ static void gyro_z_pi_50ms_handler(void)
     wireless_uart_pending = 1;
 }
 
+static void mode2(void)
+{
+}
+
+static void mode3(void)
+{
+}
+
+static void mode4(void)
+{
+}
+
+static void mode_disable_all(void)
+{
+    mode_enable[0] = 0;
+    mode_enable[1] = 0;
+    mode_enable[2] = 0;
+    mode_enable[3] = 0;
+    Motor_Set_Speed(0, 0);
+}
+
+static void mode_key_toggle(uint8 index)
+{
+    if(mode_enable[index])
+    {
+        mode_disable_all();
+    }
+    else
+    {
+        mode_disable_all();
+        mode_enable[index] = 1;
+    }
+}
+
+static void tim0_50ms_handler(void)
+{
+    static uint8 key_last[4] = {0, 0, 0, 0};
+    uint8 i;
+
+    Key_Update();
+    for(i = 0; i < 4; i++)
+    {
+        if(key_data[i] && !key_last[i])
+        {
+            mode_key_toggle(i);
+        }
+        key_last[i] = key_data[i];
+    }
+
+    if(mode_enable[0]) mode1();
+    else if(mode_enable[1]) mode2();
+    else if(mode_enable[2]) mode3();
+    else if(mode_enable[3]) mode4();
+}
+
 void main()
 {
     float wireless_uart_dat[5];
@@ -128,7 +183,7 @@ void main()
     Beep_On();
     Motor_Init();
     pit_ms_init(TIM0_PIT, 50);
-    tim0_irq_handler = gyro_z_pi_50ms_handler;
+    tim0_irq_handler = tim0_50ms_handler;
     Beep_Off();
     while (1)
     {
