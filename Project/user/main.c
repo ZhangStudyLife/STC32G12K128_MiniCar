@@ -5,7 +5,7 @@
 #include "track_io.h"
 
 #define YAW_UPDATE_DT       (0.05f)
-#define TRACK_TARGET_SCALE  (50)
+#define TRACK_TARGET_SCALE  (150)
 #define MODE2_RUN_TICK      (40)
 #define MODE2_RUN_SPEED     (500)
 #define MODE2_TURN_SPEED    (650)
@@ -89,7 +89,7 @@ static void mode1(void)
 {
     static float last_target = 0.0f;
     static float integral = 0.0f;
-    const int base_speed = 500;
+    const int base_speed = 300;
     const float kp = 2.0f;
     const float ki = 1.0f;
     float target;
