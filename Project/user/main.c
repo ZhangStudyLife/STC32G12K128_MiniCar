@@ -2,13 +2,24 @@
 #include "beep.h"
 #include "key.h"
 #include "motor.h"
+#include "track_io.h"
 
 #define YAW_UPDATE_DT       (0.05f)
+#define TRACK_TARGET_SCALE  (50)
+#define MODE1_LOST_TICK     (4)
+#define MODE1_SEARCH_SPEED  (350)
+#define MODE2_RUN_TICK      (40)
+#define MODE2_RUN_SPEED     (500)
+#define MODE2_TURN_SPEED    (650)
+#define MODE2_TURN_ANGLE    (90.0f)
 
 volatile float yaw = 0.0f;
 volatile uint8 mode_enable[4] = {0, 0, 0, 0};
 static uint8 wireless_uart_ok = 0;
 static uint8 wireless_uart_pending = 0;
+static uint8 mode2_state = 0;
+static uint8 mode2_tick = 0;
+static float mode2_yaw = 0.0f;
 static float wireless_uart_data[5];
 static uint8 xdata wireless_uart_tx_buffer[96];
 
@@ -54,12 +65,35 @@ static void wireless_uart_send_5float(float *dat)
     DMA_UR4T_CR = 0xC0;
 }
 
+float track_get_target(void)
+{
+    static uint8 last_valid_left = 1U;
+    static uint8 last_valid_right = 1U;
+    uint8 left = track_io_data[TRACK_IO_LEFT] ? 1U : 0U;
+    uint8 right = track_io_data[TRACK_IO_RIGHT] ? 1U : 0U;
+
+    if((left != 0U) || (right != 0U))
+    {
+        last_valid_left = left;
+        last_valid_right = right;
+    }
+    else
+    {
+        left = last_valid_left;
+        right = last_valid_right;
+    }
+
+    return (float)((int)left * TRACK_TARGET_SCALE
+                 + (int)right * -TRACK_TARGET_SCALE);
+}
+
 static void mode1(void)
 {
-    static uint8 control_tick = 0;
+    static uint8 lost_tick = 0;
+    static int search_speed = MODE1_SEARCH_SPEED;
     static float last_target = 0.0f;
     static float integral = 0.0f;
-    const int base_speed = 500;
+    int base_speed = 500;
     const float kp = 2.0f;
     const float ki = 1.0f;
     float target;
@@ -67,13 +101,33 @@ static void mode1(void)
     float error;
     int diff;
 
-    if(control_tick < 40)       target = (float)control_tick * 2.0f;
-    else if(control_tick < 80)  target = (float)(80 - control_tick) * 2.0f;
-    else if(control_tick < 120) target = -(float)(control_tick - 80) * 2.0f;
-    else                       target = -(float)(160 - control_tick) * 2.0f;
-    if(++control_tick >= 160)
+    if((track_io_data[TRACK_IO_LEFT] == 0) && (track_io_data[TRACK_IO_RIGHT] == 0))
     {
-        control_tick = 0;
+        if(lost_tick < MODE1_LOST_TICK)
+        {
+            lost_tick++;
+        }
+    }
+    else
+    {
+        if(lost_tick >= MODE1_LOST_TICK)
+        {
+            integral = 0.0f;
+            last_target = 0.0f;
+        }
+        lost_tick = 0;
+    }
+
+    if(lost_tick >= MODE1_LOST_TICK)
+    {
+        integral = 0.0f;
+        last_target = 0.0f;
+        Motor_Set_Speed(search_speed, -search_speed);
+        return;
+    }
+    else
+    {
+        target = track_get_target();
     }
     if((target * last_target) < 0.0f)
     {
@@ -81,7 +135,6 @@ static void mode1(void)
     }
     last_target = target;
 
-    // 目标角速度只按时间规划，不跟随红外循迹。
     imu660rb_get_gyro();
     gyro_z = - imu660rb_gyro_transition((imu660rb_gyro_z+1));       // +1 去零漂
     yaw += gyro_z * YAW_UPDATE_DT;
@@ -103,6 +156,8 @@ static void mode1(void)
     diff = (int)(kp * error + ki * integral);
     if(diff > 180) diff = 180;
     if(diff < -180) diff = -180;
+    if(diff > 0) search_speed = MODE1_SEARCH_SPEED;
+    else if(diff < 0) search_speed = -MODE1_SEARCH_SPEED;
     Motor_Set_Speed(base_speed + diff, base_speed - diff);
     wireless_uart_data[0] = key_data[0];
     wireless_uart_data[1] = key_data[1];
@@ -114,6 +169,31 @@ static void mode1(void)
 
 static void mode2(void)
 {
+    float gyro_z;
+
+    if(mode2_state == 0)
+    {
+        Motor_Set_Speed(MODE2_RUN_SPEED, MODE2_RUN_SPEED);
+        if(++mode2_tick >= MODE2_RUN_TICK)
+        {
+            mode2_tick = 0;
+            mode2_yaw = 0.0f;
+            mode2_state = 1;
+        }
+    }
+    else
+    {
+        imu660rb_get_gyro();
+        gyro_z = - imu660rb_gyro_transition((imu660rb_gyro_z+1));
+        mode2_yaw += gyro_z * YAW_UPDATE_DT;
+        Motor_Set_Speed(MODE2_TURN_SPEED, -MODE2_TURN_SPEED);
+        if((mode2_yaw >= MODE2_TURN_ANGLE) || (mode2_yaw <= -MODE2_TURN_ANGLE))
+        {
+            mode2_tick = 0;
+            mode2_yaw = 0.0f;
+            mode2_state = 0;
+        }
+    }
 }
 
 static void mode3(void)
@@ -130,6 +210,9 @@ static void mode_disable_all(void)
     mode_enable[1] = 0;
     mode_enable[2] = 0;
     mode_enable[3] = 0;
+    mode2_state = 0;
+    mode2_tick = 0;
+    mode2_yaw = 0.0f;
     Motor_Set_Speed(0, 0);
 }
 
@@ -152,6 +235,7 @@ static void tim0_50ms_handler(void)
     uint8 i;
 
     Key_Update();
+    Track_IO_Update();
     for(i = 0; i < 4; i++)
     {
         if(key_data[i] && !key_last[i])
@@ -180,6 +264,7 @@ void main()
     imu660rb_init();
     Beep_Init();
     Key_Init();
+    Track_IO_Init();
     Beep_On();
     Motor_Init();
     pit_ms_init(TIM0_PIT, 50);
