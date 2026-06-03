@@ -1,5 +1,6 @@
 #include "zf_common_headfile.h"
 #include "beep.h"
+#include "key.h"
 #include "motor.h"
 
 #define YAW_UPDATE_DT       (0.05f)
@@ -65,6 +66,7 @@ static void gyro_z_pi_50ms_handler(void)
     float error;
     int diff;
 
+    Key_Update();
     if(control_tick < 40)       target = (float)control_tick * 2.0f;
     else if(control_tick < 80)  target = (float)(80 - control_tick) * 2.0f;
     else if(control_tick < 120) target = -(float)(control_tick - 80) * 2.0f;
@@ -102,11 +104,11 @@ static void gyro_z_pi_50ms_handler(void)
     if(diff > 180) diff = 180;
     if(diff < -180) diff = -180;
     Motor_Set_Speed(base_speed + diff, base_speed - diff);
-    wireless_uart_data[0] = target;
-    wireless_uart_data[1] = gyro_z;
-    wireless_uart_data[2] = yaw;
-    wireless_uart_data[3] = error;
-    wireless_uart_data[4] = integral;
+    wireless_uart_data[0] = key_data[0];
+    wireless_uart_data[1] = key_data[1];
+    wireless_uart_data[2] = key_data[2];
+    wireless_uart_data[3] = key_data[3];
+    wireless_uart_data[4] = 0;
     wireless_uart_pending = 1;
 }
 
@@ -122,6 +124,7 @@ void main()
 
     imu660rb_init();
     Beep_Init();
+    Key_Init();
     Beep_On();
     Motor_Init();
     pit_ms_init(TIM0_PIT, 50);
